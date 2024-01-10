@@ -18,6 +18,7 @@ This library builds upon the official [authzed-go library], but tries to expose 
 ## Roadmap
 
 - ✅ Security-obvious client constructors
+- ✅ Defaults to SpiceDB's best compression method
 - ✅ Check One/Many/Any/All methods
 - ✅ Bulk Checks with a CheckBuilder
 - 🚧 Transaction-style API for Write
