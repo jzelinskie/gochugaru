@@ -8,11 +8,53 @@ import (
 
 	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
 	"github.com/authzed/authzed-go/v1"
+	"github.com/authzed/grpcutil"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	_ "github.com/mostynb/go-grpc-compression/experimental/s2" // Register Snappy S2 compression
 )
 
-func NewClient(endpoint string, opts ...grpc.DialOption) (*Client, error) {
+var defaultClientOpts = []grpc.DialOption{
+	grpc.WithDefaultCallOptions(grpc.UseCompressor("s2")),
+}
+
+// NewPlaintextClient creates a client that does not enforce TLS.
+//
+// This should be used only for testing (usually against localhost).
+func NewPlaintextClient(endpoint, presharedKey string) (*Client, error) {
+	return NewClientWithOpts(endpoint, append(
+		defaultClientOpts,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpcutil.WithInsecureBearerToken(presharedKey),
+	)...)
+}
+
+// NewSystemTLSClient creates a client using TLS verified by the operating
+// system's certificate chain.
+//
+// This should be sufficient for production usage in the typical environments.
+func NewSystemTLSClient(endpoint, presharedKey string) (*Client, error) {
+	withSystemCerts, err := grpcutil.WithSystemCerts(grpcutil.VerifyCA)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewClientWithOpts(endpoint, append(
+		defaultClientOpts,
+		withSystemCerts,
+		grpcutil.WithBearerToken("t_your_token_here_1234567deadbeef"),
+	)...)
+}
+
+// NewClientWithOpts creates a client that allows for configuring gRPC options.
+//
+// This should only be used if the other methods don't suffice.
+//
+// I'd love to hear about what DialOptions you're using in the SpiceDB Discord
+// (https://discord.gg/spicedb) or the issue tracker for this library.
+func NewClientWithOpts(endpoint string, opts ...grpc.DialOption) (*Client, error) {
 	client, err := authzed.NewClientWithExperimentalAPIs(endpoint, opts...)
 	if err != nil {
 		return nil, err
