@@ -21,10 +21,62 @@ This library builds upon the official [authzed-go library], but tries to expose 
 - ✅ Defaults to SpiceDB's best compression method
 - ✅ Check One/Many/Any/All methods
 - ✅ Bulk Checks with a CheckBuilder
-- 🚧 Transaction-style API for Write
-- 🚧 Caveats
+- ✅ Flatten Relationship-type
+- ✅ Transaction-style API for Write
+- ✅ Caveats
+- 🚧 Read/Delete with a RelationshipFilterBuilder
 - 🔜 Request Debugging
 - 🔜 Lookup Resources/Subjects
-- 🔜 Read/Delete with a RelationshipFilterBuilder
 - 🔜 Read/Write Schema
 - 🔜 Watch
+
+## Examples
+
+### Checks
+
+```go
+import gg "github.com/jzelinskie/gochugaru"
+
+...
+
+// CheckBuilders group together a bunch of checks that are optimally batched
+// together.
+var b gg.CheckBuilder
+for _, founder := range []string{"jake", "joey", "jimmy"} {
+  rel, err := gg.RelationshipFromTriple("company:authzed", "founder", "user:"+founder)
+  if err != nil {
+    ...
+  }
+  b.AddRelationship(rel)
+}
+
+// Various Check methods can be used to simplify common assertions.
+allAreFounders, err := client.CheckAll(ctx, b)
+if err != nil {
+  ...
+} else if !allAreFounders {
+  ...
+}
+```
+
+### Writes
+
+```go
+import gg "github.com/jzelinskie/gochugaru"
+
+...
+
+// You can assign gochugaru functions to variables for more terse usage.
+rel := gg.MustRelationshipFromTriple
+
+// Transactions build up preconditions and relationship updates.
+var txn gg.Txn
+for _, rival := range []string{"joey", "jake"} {
+  txn.MustNotMatch(rel("module:gochugaru", "creator", "user:"+rival).Filter())
+}
+txn.Touch(rel("module:gochugaru", "creator", "user:jimmy"))
+txn.Touch(rel("module:gochugaru", "maintainer", "sam").WithCaveat("on_tuesday", map[string]any{"day": "wednesday"}))
+
+writtenAt, err := client.Write(txn)
+...
+```

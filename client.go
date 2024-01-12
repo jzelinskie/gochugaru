@@ -5,6 +5,7 @@ package gochugaru
 import (
 	"context"
 	"errors"
+	"io"
 
 	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
 	"github.com/authzed/authzed-go/v1"
@@ -77,9 +78,9 @@ func (c *Client) Write(ctx context.Context, txn *Txn) (writtenAtRevision string,
 	return resp.WrittenAt.Token, nil
 }
 
-func (c *Client) CheckOne(ctx context.Context, object, permission, subject string) (bool, error) {
+func (c *Client) CheckOne(ctx context.Context, r Relationship) (bool, error) {
 	var b CheckBuilder
-	b.AddRelationship(object, permission, subject)
+	b.AddRelationship(r)
 	results, err := c.Check(ctx, &b)
 	if err != nil {
 		return false, err
@@ -132,4 +133,60 @@ func (c *Client) Check(ctx context.Context, b *CheckBuilder) ([]bool, error) {
 		}
 	}
 	return results, nil
+}
+
+func (c *Client) ForEachRelationship(ctx context.Context, f *Filter, fn RelationshipFunc) error {
+	stream, err := c.client.ReadRelationships(ctx, &v1.ReadRelationshipsRequest{
+		Consistency:        &v1.Consistency{}, // TODO(jzelinskie): decide API for consistency
+		RelationshipFilter: f.filter,
+		// TODO(jzelinskie): handle pagination for folks
+	})
+	if err != nil {
+		return err
+	}
+
+	for resp, err := stream.Recv(); err != io.EOF; resp, err = stream.Recv() {
+		if err != nil {
+			return err
+		}
+
+		if err := fn(fromV1(resp.Relationship)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *Client) DeleteAtomic(ctx context.Context, f *PreconditionedFilter) (deletedAtRevision string, err error) {
+	resp, err := c.client.DeleteRelationships(ctx, &v1.DeleteRelationshipsRequest{
+		RelationshipFilter:            f.filter,
+		OptionalPreconditions:         f.preconds,
+		OptionalLimit:                 0,
+		OptionalAllowPartialDeletions: false,
+	})
+	if err != nil {
+		return "", err
+	} else if resp.DeletionProgress != v1.DeleteRelationshipsResponse_DELETION_PROGRESS_COMPLETE {
+		return "", errors.New("delete disallowing partial deletion did not complete")
+	}
+
+	return resp.DeletedAt.Token, nil
+}
+
+func (c *Client) Delete(ctx context.Context, f *PreconditionedFilter) error {
+	for {
+		resp, err := c.client.DeleteRelationships(ctx, &v1.DeleteRelationshipsRequest{
+			RelationshipFilter:            f.filter,
+			OptionalPreconditions:         f.preconds,
+			OptionalLimit:                 10_000,
+			OptionalAllowPartialDeletions: false,
+		})
+		if err != nil {
+			return err
+		} else if resp.DeletionProgress == v1.DeleteRelationshipsResponse_DELETION_PROGRESS_COMPLETE {
+			break
+		}
+	}
+	return nil
 }

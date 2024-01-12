@@ -47,11 +47,11 @@ func (b *CheckBuilder) WithConsistencySnapshot(revision string) {
 }
 
 // AddRelationship appends a relationship to be checked for permissionship.
-func (b *CheckBuilder) AddRelationship(object, permission, subject string) {
-	rel := strToRel(object, permission, subject)
+func (b *CheckBuilder) AddRelationship(r Relationship) {
+	v1Rel := r.v1()
 	b.items = append(b.items, &v1.BulkCheckPermissionRequestItem{
-		Resource:   rel.Subject.Object,
-		Permission: permission,
-		Subject:    rel.Subject,
+		Resource:   v1Rel.Subject.Object,
+		Permission: v1Rel.Relation,
+		Subject:    v1Rel.Subject,
 	})
 }

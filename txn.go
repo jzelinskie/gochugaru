@@ -9,56 +9,37 @@ type Txn struct {
 	preconds []*v1.Precondition
 }
 
-func (b *Txn) MustMatch(filter string)
-func (b *Txn) MustNotMatch(filter string)
+func (b *Txn) MustMatch(f *Filter) {
+	b.preconds = append(b.preconds, &v1.Precondition{
+		Operation: v1.Precondition_OPERATION_MUST_MATCH,
+		Filter:    f.filter,
+	})
+}
 
-func (b *Txn) Touch(object, relation, subject string) {
+func (b *Txn) MustNotMatch(f *Filter) {
+	b.preconds = append(b.preconds, &v1.Precondition{
+		Operation: v1.Precondition_OPERATION_MUST_NOT_MATCH,
+		Filter:    f.filter,
+	})
+}
+
+func (b *Txn) Touch(r Relationship) {
 	b.updates = append(b.updates, &v1.RelationshipUpdate{
 		Operation:    v1.RelationshipUpdate_OPERATION_TOUCH,
-		Relationship: strToRel(object, relation, subject),
+		Relationship: r.v1(),
 	})
 }
 
-func (b *Txn) Create(object, relation, subject string) {
+func (b *Txn) Create(r Relationship) {
 	b.updates = append(b.updates, &v1.RelationshipUpdate{
 		Operation:    v1.RelationshipUpdate_OPERATION_CREATE,
-		Relationship: strToRel(object, relation, subject),
+		Relationship: r.v1(),
 	})
 }
 
-func (b *Txn) Delete(object, relation, subject string) {
+func (b *Txn) Delete(r Relationship) {
 	b.updates = append(b.updates, &v1.RelationshipUpdate{
 		Operation:    v1.RelationshipUpdate_OPERATION_DELETE,
-		Relationship: strToRel(object, relation, subject),
-	})
-}
-
-func (b *Txn) CaveatedTouch(object, relation, subject, caveatName string, caveatCtx map[string]any) {
-	r := strToRel(object, relation, subject)
-	r.OptionalCaveat = mustCaveat(caveatName, caveatCtx)
-
-	b.updates = append(b.updates, &v1.RelationshipUpdate{
-		Operation:    v1.RelationshipUpdate_OPERATION_TOUCH,
-		Relationship: r,
-	})
-}
-
-func (b *Txn) CaveatedCreate(object, relation, subject, caveatName string, caveatCtx map[string]any) {
-	r := strToRel(object, relation, subject)
-	r.OptionalCaveat = mustCaveat(caveatName, caveatCtx)
-
-	b.updates = append(b.updates, &v1.RelationshipUpdate{
-		Operation:    v1.RelationshipUpdate_OPERATION_CREATE,
-		Relationship: r,
-	})
-}
-
-func (b *Txn) CaveatedDelete(object, relation, subject, caveatName string, caveatCtx map[string]any) {
-	r := strToRel(object, relation, subject)
-	r.OptionalCaveat = mustCaveat(caveatName, caveatCtx)
-
-	b.updates = append(b.updates, &v1.RelationshipUpdate{
-		Operation:    v1.RelationshipUpdate_OPERATION_DELETE,
-		Relationship: r,
+		Relationship: r.v1(),
 	})
 }
