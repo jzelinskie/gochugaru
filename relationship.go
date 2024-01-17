@@ -8,6 +8,8 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+type Relationshipper interface{ Relationship() Relationship }
+
 type Relationship struct {
 	ResourceType     string
 	ResourceID       string
@@ -19,8 +21,9 @@ type Relationship struct {
 	CaveatContext    map[string]any
 }
 
-func (r Relationship) Permission() string { return r.ResourceRelation }
-func (r Relationship) HasCaveat() bool    { return r.CaveatName != "" }
+func (r Relationship) Relationship() Relationship { return r }
+func (r Relationship) Permission() string         { return r.ResourceRelation }
+func (r Relationship) HasCaveat() bool            { return r.CaveatName != "" }
 
 func (r Relationship) Caveat() (name string, context map[string]any, exists bool) {
 	return r.CaveatName, r.CaveatContext, r.HasCaveat()
@@ -97,6 +100,28 @@ func (r Relationship) caveat() *v1.ContextualizedCaveat {
 	}
 
 	return nil
+}
+
+type Object struct {
+	Typ      string
+	ID       string
+	Relation string
+}
+
+func (o Object) Object() Object { return o }
+
+type Objecter interface{ Object() Object }
+
+func RelationshipFromObjects(resource, subject Objecter) Relationship {
+	r, s := resource.Object(), subject.Object()
+	return Relationship{
+		ResourceType:     r.Typ,
+		ResourceID:       r.ID,
+		ResourceRelation: r.Relation,
+		SubjectType:      s.Typ,
+		SubjectID:        s.ID,
+		SubjectRelation:  s.Relation,
+	}
 }
 
 func MustRelationshipFromTriple(resource, relation, subject string) Relationship {

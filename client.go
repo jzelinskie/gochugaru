@@ -78,7 +78,7 @@ func (c *Client) Write(ctx context.Context, txn *Txn) (writtenAtRevision string,
 	return resp.WrittenAt.Token, nil
 }
 
-func (c *Client) CheckOne(ctx context.Context, con Consistency, r Relationship) (bool, error) {
+func (c *Client) CheckOne(ctx context.Context, con Consistency, r Relationshipper) (bool, error) {
 	results, err := c.Check(ctx, con, r)
 	if err != nil {
 		return false, err
@@ -86,7 +86,7 @@ func (c *Client) CheckOne(ctx context.Context, con Consistency, r Relationship) 
 	return results[0], nil
 }
 
-func (c *Client) CheckAny(ctx context.Context, con Consistency, rs []Relationship) (bool, error) {
+func (c *Client) CheckAny(ctx context.Context, con Consistency, rs []Relationshipper) (bool, error) {
 	results, err := c.Check(ctx, con, rs...)
 	if err != nil {
 		return false, err
@@ -95,7 +95,7 @@ func (c *Client) CheckAny(ctx context.Context, con Consistency, rs []Relationshi
 	return slices.Contains(results, true), nil
 }
 
-func (c *Client) CheckAll(ctx context.Context, con Consistency, rs []Relationship) (bool, error) {
+func (c *Client) CheckAll(ctx context.Context, con Consistency, rs []Relationshipper) (bool, error) {
 	results, err := c.Check(ctx, con, rs...)
 	if err != nil {
 		return false, err
@@ -109,9 +109,10 @@ func (c *Client) CheckAll(ctx context.Context, con Consistency, rs []Relationshi
 	return true, nil
 }
 
-func (c *Client) Check(ctx context.Context, con Consistency, rs ...Relationship) ([]bool, error) {
+func (c *Client) Check(ctx context.Context, con Consistency, rs ...Relationshipper) ([]bool, error) {
 	items := make([]*v1.BulkCheckPermissionRequestItem, 0, len(rs))
-	for _, r := range rs {
+	for _, ir := range rs {
+		r := ir.Relationship()
 		items = append(items, &v1.BulkCheckPermissionRequestItem{
 			Resource: &v1.ObjectReference{
 				ObjectType: r.ResourceType,
