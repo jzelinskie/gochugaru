@@ -1,4 +1,4 @@
-module gochugaru
+module github.com/jzelinskie/gochugaru
 
 go 1.21.6
 
