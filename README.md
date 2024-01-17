@@ -20,10 +20,10 @@ This library builds upon the official [authzed-go library], but tries to expose 
 - ✅ Security-obvious client constructors
 - ✅ Defaults to SpiceDB's best compression method
 - ✅ Check One/Many/Any/All methods
-- ✅ Bulk Checks with a CheckBuilder
-- ✅ Flatten Relationship-type
+- ✅ Checks that use BulkChecks under the hood
+- ✅ Flattened Relationship-type with Caveats
 - ✅ Transaction-style API for Write
-- ✅ Caveats
+- ✅ Constructors for Consistency
 - 🚧 Read/Delete with a RelationshipFilterBuilder
 - 🔜 Request Debugging
 - 🔜 Lookup Resources/Subjects
@@ -39,19 +39,20 @@ import gg "github.com/jzelinskie/gochugaru"
 
 ...
 
-// CheckBuilders group together a bunch of checks that are optimally batched
-// together.
-var b gg.CheckBuilder
+// Build up a set of relationships to be checked like any other slice.
+var founders []Relationship
 for _, founder := range []string{"jake", "joey", "jimmy"} {
+  // There are various constructors for the Relationship type that can
+  // trade-off allocations for legibility and understandability.
   rel, err := gg.RelationshipFromTriple("company:authzed", "founder", "user:"+founder)
   if err != nil {
     ...
   }
-  b.AddRelationship(rel)
+  founders = append(founders, rel)
 }
 
 // Various Check methods can be used to simplify common assertions.
-allAreFounders, err := client.CheckAll(ctx, b)
+allAreFounders, err := client.CheckAll(ctx, founders...)
 if err != nil {
   ...
 } else if !allAreFounders {
@@ -69,7 +70,9 @@ import gg "github.com/jzelinskie/gochugaru"
 // You can assign gochugaru functions to variables for more terse usage.
 rel := gg.MustRelationshipFromTriple
 
-// Transactions build up preconditions and relationship updates.
+// Transactions are built up of preconditions that must or must not exist and
+// the set of updates (creates, touches, or deletes) to be applied.
+and relationship updates.
 var txn gg.Txn
 for _, rival := range []string{"joey", "jake"} {
   txn.MustNotMatch(rel("module:gochugaru", "creator", "user:"+rival).Filter())

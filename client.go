@@ -78,18 +78,16 @@ func (c *Client) Write(ctx context.Context, txn *Txn) (writtenAtRevision string,
 	return resp.WrittenAt.Token, nil
 }
 
-func (c *Client) CheckOne(ctx context.Context, r Relationship) (bool, error) {
-	var b CheckBuilder
-	b.AddRelationship(r)
-	results, err := c.Check(ctx, &b)
+func (c *Client) CheckOne(ctx context.Context, con Consistency, r Relationship) (bool, error) {
+	results, err := c.Check(ctx, con, r)
 	if err != nil {
 		return false, err
 	}
 	return results[0], nil
 }
 
-func (c *Client) CheckAny(ctx context.Context, b *CheckBuilder) (bool, error) {
-	results, err := c.Check(ctx, b)
+func (c *Client) CheckAny(ctx context.Context, con Consistency, rs []Relationship) (bool, error) {
+	results, err := c.Check(ctx, con, rs...)
 	if err != nil {
 		return false, err
 	}
@@ -97,8 +95,8 @@ func (c *Client) CheckAny(ctx context.Context, b *CheckBuilder) (bool, error) {
 	return slices.Contains(results, true), nil
 }
 
-func (c *Client) CheckAll(ctx context.Context, b *CheckBuilder) (bool, error) {
-	results, err := c.Check(ctx, b)
+func (c *Client) CheckAll(ctx context.Context, con Consistency, rs []Relationship) (bool, error) {
+	results, err := c.Check(ctx, con, rs...)
 	if err != nil {
 		return false, err
 	}
@@ -111,10 +109,29 @@ func (c *Client) CheckAll(ctx context.Context, b *CheckBuilder) (bool, error) {
 	return true, nil
 }
 
-func (c *Client) Check(ctx context.Context, b *CheckBuilder) ([]bool, error) {
+func (c *Client) Check(ctx context.Context, con Consistency, rs ...Relationship) ([]bool, error) {
+	items := make([]*v1.BulkCheckPermissionRequestItem, 0, len(rs))
+	for _, r := range rs {
+		items = append(items, &v1.BulkCheckPermissionRequestItem{
+			Resource: &v1.ObjectReference{
+				ObjectType: r.ResourceType,
+				ObjectId:   r.ResourceID,
+			},
+			Permission: r.ResourceRelation,
+			Subject: &v1.SubjectReference{
+				Object: &v1.ObjectReference{
+					ObjectType: r.SubjectType,
+					ObjectId:   r.SubjectRelation,
+				},
+				OptionalRelation: r.SubjectRelation,
+			},
+			Context: r.caveat().GetContext(),
+		})
+	}
+
 	resp, err := c.client.BulkCheckPermission(ctx, &v1.BulkCheckPermissionRequest{
-		Consistency: b.consistency,
-		Items:       b.items,
+		Consistency: con.v1c,
+		Items:       items,
 	})
 	if err != nil {
 		return nil, err
@@ -135,9 +152,9 @@ func (c *Client) Check(ctx context.Context, b *CheckBuilder) ([]bool, error) {
 	return results, nil
 }
 
-func (c *Client) ForEachRelationship(ctx context.Context, f *Filter, fn RelationshipFunc) error {
+func (c *Client) ForEachRelationship(ctx context.Context, con Consistency, f *Filter, fn RelationshipFunc) error {
 	stream, err := c.client.ReadRelationships(ctx, &v1.ReadRelationshipsRequest{
-		Consistency:        &v1.Consistency{}, // TODO(jzelinskie): decide API for consistency
+		Consistency:        con.v1c,
 		RelationshipFilter: f.filter,
 		// TODO(jzelinskie): handle pagination for folks
 	})
