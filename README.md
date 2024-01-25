@@ -28,7 +28,7 @@ This library builds upon the official [authzed-go library], but tries to expose 
 - 🔜 Request Debugging
 - 🔜 Lookup Resources/Subjects
 - 🔜 Read/Write Schema
-- 🔜 Watch
+- 🔜 Watch with keepalives
 
 ## Examples
 
