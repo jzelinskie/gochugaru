@@ -80,6 +80,6 @@ for _, rival := range []string{"joey", "jake"} {
 txn.Touch(rel("module:gochugaru", "creator", "user:jimmy"))
 txn.Touch(rel("module:gochugaru", "maintainer", "sam").WithCaveat("on_tuesday", map[string]any{"day": "wednesday"}))
 
-writtenAt, err := client.Write(txn)
+writtenAt, err := client.Write(ctx, txn)
 ...
 ```
