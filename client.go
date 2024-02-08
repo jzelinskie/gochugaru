@@ -78,16 +78,16 @@ func (c *Client) Write(ctx context.Context, txn *Txn) (writtenAtRevision string,
 	return resp.WrittenAt.Token, nil
 }
 
-func (c *Client) CheckOne(ctx context.Context, con Consistency, r Relationshipper) (bool, error) {
-	results, err := c.Check(ctx, con, r)
+func (c *Client) CheckOne(ctx context.Context, cs *Consistency, r Relationshipper) (bool, error) {
+	results, err := c.Check(ctx, cs, r)
 	if err != nil {
 		return false, err
 	}
 	return results[0], nil
 }
 
-func (c *Client) CheckAny(ctx context.Context, con Consistency, rs []Relationshipper) (bool, error) {
-	results, err := c.Check(ctx, con, rs...)
+func (c *Client) CheckAny(ctx context.Context, cs *Consistency, rs []Relationshipper) (bool, error) {
+	results, err := c.Check(ctx, cs, rs...)
 	if err != nil {
 		return false, err
 	}
@@ -95,8 +95,8 @@ func (c *Client) CheckAny(ctx context.Context, con Consistency, rs []Relationshi
 	return slices.Contains(results, true), nil
 }
 
-func (c *Client) CheckAll(ctx context.Context, con Consistency, rs []Relationshipper) (bool, error) {
-	results, err := c.Check(ctx, con, rs...)
+func (c *Client) CheckAll(ctx context.Context, cs *Consistency, rs []Relationshipper) (bool, error) {
+	results, err := c.Check(ctx, cs, rs...)
 	if err != nil {
 		return false, err
 	}
@@ -109,7 +109,7 @@ func (c *Client) CheckAll(ctx context.Context, con Consistency, rs []Relationshi
 	return true, nil
 }
 
-func (c *Client) Check(ctx context.Context, con Consistency, rs ...Relationshipper) ([]bool, error) {
+func (c *Client) Check(ctx context.Context, cs *Consistency, rs ...Relationshipper) ([]bool, error) {
 	items := make([]*v1.BulkCheckPermissionRequestItem, 0, len(rs))
 	for _, ir := range rs {
 		r := ir.Relationship()
@@ -131,7 +131,7 @@ func (c *Client) Check(ctx context.Context, con Consistency, rs ...Relationshipp
 	}
 
 	resp, err := c.client.BulkCheckPermission(ctx, &v1.BulkCheckPermissionRequest{
-		Consistency: con.v1c,
+		Consistency: cs.v1c,
 		Items:       items,
 	})
 	if err != nil {
@@ -153,9 +153,9 @@ func (c *Client) Check(ctx context.Context, con Consistency, rs ...Relationshipp
 	return results, nil
 }
 
-func (c *Client) ForEachRelationship(ctx context.Context, con Consistency, f *Filter, fn RelationshipFunc) error {
+func (c *Client) ForEachRelationship(ctx context.Context, cs *Consistency, f *Filter, fn RelationshipFunc) error {
 	stream, err := c.client.ReadRelationships(ctx, &v1.ReadRelationshipsRequest{
-		Consistency:        con.v1c,
+		Consistency:        cs.v1c,
 		RelationshipFilter: f.filter,
 		// TODO(jzelinskie): handle pagination for folks
 	})
