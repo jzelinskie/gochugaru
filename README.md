@@ -21,6 +21,7 @@ This library builds upon the official [authzed-go library], but tries to expose 
 - ✅ Defaults to SpiceDB's best compression method
 - ✅ Check One/Many/Any/All methods
 - ✅ Checks that use BulkChecks under the hood
+- ✅ Interfaces for Relationships, Objects
 - ✅ Flattened Relationship-type with Caveats
 - ✅ Transaction-style API for Write
 - ✅ Constructors for Consistency

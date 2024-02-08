@@ -150,7 +150,7 @@ func RelationshipFromTuple(resource, subject string) (Relationship, error) {
 		found bool
 	)
 
-	resource, r.ResourceRelation, found = strings.Cut(subject, "#")
+	resource, r.ResourceRelation, found = strings.Cut(resource, "#")
 	if !found {
 		return r, errors.New("missing resource relation")
 	}
