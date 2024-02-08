@@ -8,6 +8,17 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+var (
+	// ErrInvalidResource is a catch-all error when a resource is invalid.
+	ErrInvalidResource = errors.New("invalid resource")
+
+	// ErrInvalidRelation is a catch-all error when a relation is invalid.
+	ErrInvalidRelation = errors.New("invalid relation")
+
+	// ErrInvalidSubject is a catch-all error when a subject is invalid.
+	ErrInvalidSubject = errors.New("invalid subject")
+)
+
 type Relationshipper interface{ Relationship() Relationship }
 
 type Relationship struct {
@@ -151,13 +162,13 @@ func RelationshipFromTuple(resource, subject string) (Relationship, error) {
 	)
 
 	resource, r.ResourceRelation, found = strings.Cut(resource, "#")
-	if !found {
-		return r, errors.New("missing resource relation")
+	if !found || r.ResourceRelation == "" {
+		return r, ErrInvalidRelation
 	}
 
 	r.ResourceType, r.ResourceID, found = strings.Cut(resource, ":")
 	if !found {
-		return r, errors.New("missing resource id")
+		return r, ErrInvalidResource
 	}
 
 	// Optional
@@ -165,7 +176,7 @@ func RelationshipFromTuple(resource, subject string) (Relationship, error) {
 
 	r.SubjectType, r.SubjectID, found = strings.Cut(subject, ":")
 	if !found {
-		return r, errors.New("missing subject id")
+		return r, ErrInvalidSubject
 	}
 
 	return r, nil
