@@ -67,6 +67,7 @@ type Client struct {
 	client *authzed.ClientWithExperimental
 }
 
+// Write atomically performs a transaction on relationships.
 func (c *Client) Write(ctx context.Context, txn *Txn) (writtenAtRevision string, err error) {
 	resp, err := c.client.WriteRelationships(ctx, &v1.WriteRelationshipsRequest{
 		Updates:               txn.updates,
@@ -78,6 +79,7 @@ func (c *Client) Write(ctx context.Context, txn *Txn) (writtenAtRevision string,
 	return resp.WrittenAt.Token, nil
 }
 
+// CheckOne performs a permissions check for a single relationship.
 func (c *Client) CheckOne(ctx context.Context, cs *Consistency, r Relationshipper) (bool, error) {
 	results, err := c.Check(ctx, cs, r)
 	if err != nil {
@@ -86,6 +88,7 @@ func (c *Client) CheckOne(ctx context.Context, cs *Consistency, r Relationshippe
 	return results[0], nil
 }
 
+// CheckAny returns true if any of the provided relationships have access.
 func (c *Client) CheckAny(ctx context.Context, cs *Consistency, rs []Relationshipper) (bool, error) {
 	results, err := c.Check(ctx, cs, rs...)
 	if err != nil {
@@ -95,6 +98,7 @@ func (c *Client) CheckAny(ctx context.Context, cs *Consistency, rs []Relationshi
 	return slices.Contains(results, true), nil
 }
 
+// CheckAll returns true if all of the provided relationships have access.
 func (c *Client) CheckAll(ctx context.Context, cs *Consistency, rs []Relationshipper) (bool, error) {
 	results, err := c.Check(ctx, cs, rs...)
 	if err != nil {
@@ -109,6 +113,7 @@ func (c *Client) CheckAll(ctx context.Context, cs *Consistency, rs []Relationshi
 	return true, nil
 }
 
+// Check performs a batched permissions check for the provided relationships.
 func (c *Client) Check(ctx context.Context, cs *Consistency, rs ...Relationshipper) ([]bool, error) {
 	items := make([]*v1.BulkCheckPermissionRequestItem, 0, len(rs))
 	for _, ir := range rs {
@@ -153,6 +158,8 @@ func (c *Client) Check(ctx context.Context, cs *Consistency, rs ...Relationshipp
 	return results, nil
 }
 
+// ForEachRelationship calls the provided function for each relationship
+// matching the provided filter.
 func (c *Client) ForEachRelationship(ctx context.Context, cs *Consistency, f *Filter, fn RelationshipFunc) error {
 	stream, err := c.client.ReadRelationships(ctx, &v1.ReadRelationshipsRequest{
 		Consistency:        cs.v1c,
@@ -176,6 +183,8 @@ func (c *Client) ForEachRelationship(ctx context.Context, cs *Consistency, f *Fi
 	return nil
 }
 
+// DeleteAtomic removes all of the relationships matching the provided filter
+// in a single transaction.
 func (c *Client) DeleteAtomic(ctx context.Context, f *PreconditionedFilter) (deletedAtRevision string, err error) {
 	resp, err := c.client.DeleteRelationships(ctx, &v1.DeleteRelationshipsRequest{
 		RelationshipFilter:            f.filter,
@@ -192,6 +201,8 @@ func (c *Client) DeleteAtomic(ctx context.Context, f *PreconditionedFilter) (del
 	return resp.DeletedAt.Token, nil
 }
 
+// Delete removes all of the relationships matching the provided filter in
+// batches.
 func (c *Client) Delete(ctx context.Context, f *PreconditionedFilter) error {
 	for {
 		resp, err := c.client.DeleteRelationships(ctx, &v1.DeleteRelationshipsRequest{
