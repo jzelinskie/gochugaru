@@ -27,6 +27,17 @@ func TestRelationshipParsingTriples(t *testing.T) {
 	}
 }
 
+func ExampleMustRelationshipFromTriple() {
+	// If you're using this in tests, you might want to try this
+	// to abbreivate the function name because it's long by default:
+	rel := gg.MustRelationshipFromTriple
+
+	r := rel("document:example", "viewer", "user:jzelinskie")
+	fmt.Println(r)
+	// Output:
+	// {document example viewer user jzelinskie   map[]}
+}
+
 func ExampleRelationship_WithCaveat() {
 	rel := gg.
 		MustRelationshipFromTriple("document:example", "viewer", "user:jzelinskie").

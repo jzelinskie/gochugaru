@@ -2,6 +2,11 @@ package gochugaru
 
 import v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
 
+// Consistency represents the strategy that a request can use in order to
+// trade-off speed with latency.
+// For more info see:
+// https://authzed.com/docs/spicedb/concepts/consistency
+// https://en.wikipedia.org/wiki/PACELC_theorem
 type Consistency struct {
 	v1c *v1.Consistency
 }
