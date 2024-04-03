@@ -8,7 +8,7 @@ require (
 	github.com/mostynb/go-grpc-compression v1.2.2
 	golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc
 	google.golang.org/grpc v1.58.3
-	google.golang.org/protobuf v1.31.0
+	google.golang.org/protobuf v1.33.0
 )
 
 require (
