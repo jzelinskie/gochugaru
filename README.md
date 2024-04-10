@@ -19,6 +19,7 @@ This library builds upon the official [authzed-go library], but tries to expose 
 
 - ✅ Security-obvious client constructors
 - ✅ Defaults to SpiceDB's best compression method
+- ✅ Automatic back-off & retry logic
 - ✅ Check One/Many/Any/All methods
 - ✅ Checks that use BulkChecks under the hood
 - ✅ Interfaces for Relationships, Objects

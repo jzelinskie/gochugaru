@@ -6,13 +6,18 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
+	"time"
 
 	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
 	"github.com/authzed/authzed-go/v1"
 	"github.com/authzed/grpcutil"
+	"github.com/cenkalti/backoff/v4"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	_ "github.com/mostynb/go-grpc-compression/experimental/s2" // Register Snappy S2 compression
 )
@@ -113,6 +118,71 @@ func (c *Client) CheckAll(ctx context.Context, cs *Consistency, rs []Relationshi
 	return true, nil
 }
 
+// withBackoffRetriesAndTimeout is a utility to wrap an API call with retry
+// and backoff logic based on the error or gRPC status code.
+func withBackoffRetriesAndTimeout(ctx context.Context, fn func(context.Context) error) error {
+	backoffInterval := backoff.NewExponentialBackOff()
+	backoffInterval.InitialInterval = 50 * time.Millisecond
+	backoffInterval.MaxInterval = 2 * time.Second
+	backoffInterval.MaxElapsedTime = 0
+	backoffInterval.Reset()
+
+	maxRetries := 10
+	defaultTimeout := 30 * time.Second
+
+	for retryCount := 0; ; retryCount++ {
+		cancelCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
+		err := fn(cancelCtx)
+		cancel()
+
+		if isRetriable(err) && retryCount < maxRetries {
+			time.Sleep(backoffInterval.NextBackOff())
+			retryCount++
+			continue
+		}
+		break
+	}
+	return errors.New("max retries exceeded")
+}
+
+// isRetriable determines whether or not an error returned by the gRPC client
+// can be retried.
+func isRetriable(err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case isGrpcCode(err, codes.Unavailable, codes.DeadlineExceeded):
+		return true
+	case errContains(err, "retryable error", "try restarting transaction"):
+		return true // SpiceDB < v1.30 need this to properly retry.
+	}
+	return errors.Is(err, context.DeadlineExceeded)
+}
+
+func isGrpcCode(err error, codes ...codes.Code) bool {
+	if err == nil {
+		return false
+	}
+
+	if s, ok := status.FromError(err); ok {
+		return slices.Contains(codes, s.Code())
+	}
+	return false
+}
+
+func errContains(err error, errStrs ...string) bool {
+	if err == nil {
+		return false
+	}
+
+	for _, errStr := range errStrs {
+		if strings.Contains(err.Error(), errStr) {
+			return true
+		}
+	}
+	return false
+}
+
 // Check performs a batched permissions check for the provided relationships.
 func (c *Client) Check(ctx context.Context, cs *Consistency, rs ...Relationshipper) ([]bool, error) {
 	items := make([]*v1.BulkCheckPermissionRequestItem, 0, len(rs))
@@ -135,11 +205,14 @@ func (c *Client) Check(ctx context.Context, cs *Consistency, rs ...Relationshipp
 		})
 	}
 
-	resp, err := c.client.BulkCheckPermission(ctx, &v1.BulkCheckPermissionRequest{
-		Consistency: cs.v1c,
-		Items:       items,
-	})
-	if err != nil {
+	var resp *v1.BulkCheckPermissionResponse
+	if err := withBackoffRetriesAndTimeout(ctx, func(cCtx context.Context) (cErr error) {
+		resp, cErr = c.client.BulkCheckPermission(cCtx, &v1.BulkCheckPermissionRequest{
+			Consistency: cs.v1c,
+			Items:       items,
+		})
+		return cErr
+	}); err != nil {
 		return nil, err
 	}
 
@@ -186,6 +259,7 @@ func (c *Client) ForEachRelationship(ctx context.Context, cs *Consistency, f *Fi
 // DeleteAtomic removes all of the relationships matching the provided filter
 // in a single transaction.
 func (c *Client) DeleteAtomic(ctx context.Context, f *PreconditionedFilter) (deletedAtRevision string, err error) {
+	// Explicitly given no back-off or retry logic.
 	resp, err := c.client.DeleteRelationships(ctx, &v1.DeleteRelationshipsRequest{
 		RelationshipFilter:            f.filter,
 		OptionalPreconditions:         f.preconds,
@@ -205,13 +279,16 @@ func (c *Client) DeleteAtomic(ctx context.Context, f *PreconditionedFilter) (del
 // batches.
 func (c *Client) Delete(ctx context.Context, f *PreconditionedFilter) error {
 	for {
-		resp, err := c.client.DeleteRelationships(ctx, &v1.DeleteRelationshipsRequest{
-			RelationshipFilter:            f.filter,
-			OptionalPreconditions:         f.preconds,
-			OptionalLimit:                 10_000,
-			OptionalAllowPartialDeletions: false,
-		})
-		if err != nil {
+		var resp *v1.DeleteRelationshipsResponse
+		if err := withBackoffRetriesAndTimeout(ctx, func(cCtx context.Context) (cErr error) {
+			resp, cErr = c.client.DeleteRelationships(cCtx, &v1.DeleteRelationshipsRequest{
+				RelationshipFilter:            f.filter,
+				OptionalPreconditions:         f.preconds,
+				OptionalLimit:                 10_000,
+				OptionalAllowPartialDeletions: false,
+			})
+			return cErr
+		}); err != nil {
 			return err
 		} else if resp.DeletionProgress == v1.DeleteRelationshipsResponse_DELETION_PROGRESS_COMPLETE {
 			break
