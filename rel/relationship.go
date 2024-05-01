@@ -1,4 +1,4 @@
-package gochugaru
+package rel
 
 import (
 	"errors"
@@ -19,7 +19,7 @@ var (
 	ErrInvalidSubject = errors.New("invalid subject")
 )
 
-type Relationshipper interface{ Relationship() Relationship }
+type Interface interface{ Relationship() Relationship }
 
 type Relationship struct {
 	ResourceType     string
@@ -73,11 +73,11 @@ func (r Relationship) v1() *v1.Relationship {
 			},
 			OptionalRelation: r.SubjectRelation,
 		},
-		OptionalCaveat: r.caveat(),
+		OptionalCaveat: r.MustV1ProtoCaveat(),
 	}
 }
 
-func fromV1(r *v1.Relationship) Relationship {
+func FromV1Proto(r *v1.Relationship) Relationship {
 	var caveatName string
 	var caveatContext map[string]any
 	if r.OptionalCaveat != nil {
@@ -97,7 +97,7 @@ func fromV1(r *v1.Relationship) Relationship {
 	}
 }
 
-func (r Relationship) caveat() *v1.ContextualizedCaveat {
+func (r Relationship) MustV1ProtoCaveat() *v1.ContextualizedCaveat {
 	if name, context, ok := r.Caveat(); ok {
 		cc, err := structpb.NewStruct(context)
 		if err != nil {
@@ -123,7 +123,7 @@ func (o Object) Object() Object { return o }
 
 type Objecter interface{ Object() Object }
 
-func RelationshipFromObjects(resource, subject Objecter) Relationship {
+func FromObjects(resource, subject Objecter) Relationship {
 	r, s := resource.Object(), subject.Object()
 	return Relationship{
 		ResourceType:     r.Typ,
@@ -135,27 +135,27 @@ func RelationshipFromObjects(resource, subject Objecter) Relationship {
 	}
 }
 
-func MustRelationshipFromTriple(resource, relation, subject string) Relationship {
-	r, err := RelationshipFromTriple(resource, relation, subject)
+func MustFromTriple(resource, relation, subject string) Relationship {
+	r, err := FromTriple(resource, relation, subject)
 	if err != nil {
 		panic(err)
 	}
 	return r
 }
 
-func RelationshipFromTriple(resource, relation, subject string) (Relationship, error) {
-	return RelationshipFromTuple(resource+"#"+relation, subject)
+func FromTriple(resource, relation, subject string) (Relationship, error) {
+	return FromTuple(resource+"#"+relation, subject)
 }
 
-func MustRelationshipFromTuple(resource, subject string) Relationship {
-	r, err := RelationshipFromTuple(resource, subject)
+func MustFromTuple(resource, subject string) Relationship {
+	r, err := FromTuple(resource, subject)
 	if err != nil {
 		panic(err)
 	}
 	return r
 }
 
-func RelationshipFromTuple(resource, subject string) (Relationship, error) {
+func FromTuple(resource, subject string) (Relationship, error) {
 	var (
 		r     Relationship
 		found bool
@@ -182,4 +182,15 @@ func RelationshipFromTuple(resource, subject string) (Relationship, error) {
 	return r, nil
 }
 
-type RelationshipFunc func(r Relationship) error
+type Func func(r Relationship) error
+
+type UpdateType int
+
+const (
+	UpdateUnknown UpdateType = iota
+	UpdateCreate
+	UpdateDelete
+	UpdateTouch
+)
+
+type UpdateFunc func(typ UpdateType, r Relationship) error

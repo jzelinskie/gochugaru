@@ -26,18 +26,35 @@ This library builds upon the official [authzed-go library], but tries to expose 
 - ✅ Flattened Relationship-type with Caveats
 - ✅ Transaction-style API for Write
 - ✅ Constructors for Consistency
+- ✅ Callback-style API for Watch and ReadRelationships
 - 🚧 Read/Delete with a RelationshipFilterBuilder
 - 🔜 Request Debugging
 - 🔜 Lookup Resources/Subjects
 - 🔜 Read/Write Schema
-- 🔜 Watch with keepalives
+- 🔜 Keepalives for watch?
 
 ## Examples
+
+### Clients
+
+```go
+import "github.com/jzelinskie/gochugaru/client"
+
+...
+
+// Various constructors to allocate clients for dev and production environments
+// using the best practices.
+authz, err := client.NewSystemTLS("spicedb.mycluster.local", presharedKey)
+if err != nil {
+  ...
+}
+```
 
 ### Checks
 
 ```go
-import gg "github.com/jzelinskie/gochugaru"
+import "github.com/jzelinskie/gochugaru/client"
+import "github.com/jzelinskie/gochugaru/rel"
 
 ...
 
@@ -46,7 +63,7 @@ var founders []Relationship
 for _, founder := range []string{"jake", "joey", "jimmy"} {
   // There are various constructors for the Relationship type that can
   // trade-off allocations for legibility and understandability.
-  rel, err := gg.RelationshipFromTriple("company:authzed", "founder", "user:"+founder)
+  rel, err := rel.FromTriple("company:authzed", "founder", "user:"+founder)
   if err != nil {
     ...
   }
@@ -54,7 +71,7 @@ for _, founder := range []string{"jake", "joey", "jimmy"} {
 }
 
 // Various Check methods can be used to simplify common assertions.
-allAreFounders, err := client.CheckAll(ctx, founders...)
+allAreFounders, err := authz.CheckAll(ctx, consistency.MinLatency(), founders...)
 if err != nil {
   ...
 } else if !allAreFounders {
@@ -65,23 +82,25 @@ if err != nil {
 ### Writes
 
 ```go
-import gg "github.com/jzelinskie/gochugaru"
+import "github.com/jzelinskie/gochugaru/client"
+import "github.com/jzelinskie/gochugaru/rel"
 
 ...
 
-// You can assign gochugaru functions to variables for more terse usage.
-rel := gg.MustRelationshipFromTriple
-
 // Transactions are built up of preconditions that must or must not exist and
 // the set of updates (creates, touches, or deletes) to be applied.
-and relationship updates.
-var txn gg.Txn
-for _, rival := range []string{"joey", "jake"} {
-  txn.MustNotMatch(rel("module:gochugaru", "creator", "user:"+rival).Filter())
-}
-txn.Touch(rel("module:gochugaru", "creator", "user:jimmy"))
-txn.Touch(rel("module:gochugaru", "maintainer", "sam").WithCaveat("on_tuesday", map[string]any{"day": "wednesday"}))
+var txn rel.Txn
 
-writtenAt, err := client.Write(ctx, txn)
+// The preconditions:
+for _, rival := range []string{"joey", "jake"} {
+  txn.MustNotMatch(rel.MustFromTriple("module:gochugaru", "creator", "user:"+rival).Filter())
+}
+
+// The updates:
+txn.Touch(rel.MustFromTriple("module:gochugaru", "creator", "user:jimmy"))
+txn.Touch(rel.MustFromTriple("module:gochugaru", "maintainer", "sam").
+	WithCaveat("on_tuesday", map[string]any{"day": "wednesday"}))
+
+writtenAt, err := authz.Write(ctx, txn)
 ...
 ```

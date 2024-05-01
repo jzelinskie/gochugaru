@@ -1,6 +1,6 @@
-// Package gochugaru implements an ergonomic SpiceDB client that wraps the
+// Package client implements an ergonomic SpiceDB client that wraps the
 // official AuthZed gRPC client.
-package gochugaru
+package client
 
 import (
 	"context"
@@ -20,47 +20,50 @@ import (
 	"google.golang.org/grpc/status"
 
 	_ "github.com/mostynb/go-grpc-compression/experimental/s2" // Register Snappy S2 compression
+
+	"github.com/jzelinskie/gochugaru/consistency"
+	"github.com/jzelinskie/gochugaru/rel"
 )
 
 var defaultClientOpts = []grpc.DialOption{
 	grpc.WithDefaultCallOptions(grpc.UseCompressor("s2")),
 }
 
-// NewPlaintextClient creates a client that does not enforce TLS.
+// NewPlaintext creates a client that does not enforce TLS.
 //
 // This should be used only for testing (usually against localhost).
-func NewPlaintextClient(endpoint, presharedKey string) (*Client, error) {
-	return NewClientWithOpts(endpoint, append(
+func NewPlaintext(endpoint, presharedKey string) (*Client, error) {
+	return NewWithOpts(endpoint, append(
 		defaultClientOpts,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpcutil.WithInsecureBearerToken(presharedKey),
 	)...)
 }
 
-// NewSystemTLSClient creates a client using TLS verified by the operating
+// NewSystemTLS creates a client using TLS verified by the operating
 // system's certificate chain.
 //
 // This should be sufficient for production usage in the typical environments.
-func NewSystemTLSClient(endpoint, presharedKey string) (*Client, error) {
+func NewSystemTLS(endpoint, presharedKey string) (*Client, error) {
 	withSystemCerts, err := grpcutil.WithSystemCerts(grpcutil.VerifyCA)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewClientWithOpts(endpoint, append(
+	return NewWithOpts(endpoint, append(
 		defaultClientOpts,
 		withSystemCerts,
 		grpcutil.WithBearerToken("t_your_token_here_1234567deadbeef"),
 	)...)
 }
 
-// NewClientWithOpts creates a client that allows for configuring gRPC options.
+// NewWithOpts creates a client that allows for configuring gRPC options.
 //
 // This should only be used if the other methods don't suffice.
 //
 // I'd love to hear about what DialOptions you're using in the SpiceDB Discord
 // (https://discord.gg/spicedb) or the issue tracker for this library.
-func NewClientWithOpts(endpoint string, opts ...grpc.DialOption) (*Client, error) {
+func NewWithOpts(endpoint string, opts ...grpc.DialOption) (*Client, error) {
 	client, err := authzed.NewClientWithExperimentalAPIs(endpoint, opts...)
 	if err != nil {
 		return nil, err
@@ -73,10 +76,10 @@ type Client struct {
 }
 
 // Write atomically performs a transaction on relationships.
-func (c *Client) Write(ctx context.Context, txn *Txn) (writtenAtRevision string, err error) {
+func (c *Client) Write(ctx context.Context, txn *rel.Txn) (writtenAtRevision string, err error) {
 	resp, err := c.client.WriteRelationships(ctx, &v1.WriteRelationshipsRequest{
-		Updates:               txn.updates,
-		OptionalPreconditions: txn.preconds,
+		Updates:               txn.V1Updates,
+		OptionalPreconditions: txn.V1Preconds,
 	})
 	if err != nil {
 		return "", err
@@ -85,7 +88,7 @@ func (c *Client) Write(ctx context.Context, txn *Txn) (writtenAtRevision string,
 }
 
 // CheckOne performs a permissions check for a single relationship.
-func (c *Client) CheckOne(ctx context.Context, cs *Consistency, r Relationshipper) (bool, error) {
+func (c *Client) CheckOne(ctx context.Context, cs *consistency.Strategy, r rel.Interface) (bool, error) {
 	results, err := c.Check(ctx, cs, r)
 	if err != nil {
 		return false, err
@@ -94,7 +97,7 @@ func (c *Client) CheckOne(ctx context.Context, cs *Consistency, r Relationshippe
 }
 
 // CheckAny returns true if any of the provided relationships have access.
-func (c *Client) CheckAny(ctx context.Context, cs *Consistency, rs []Relationshipper) (bool, error) {
+func (c *Client) CheckAny(ctx context.Context, cs *consistency.Strategy, rs []rel.Interface) (bool, error) {
 	results, err := c.Check(ctx, cs, rs...)
 	if err != nil {
 		return false, err
@@ -104,7 +107,7 @@ func (c *Client) CheckAny(ctx context.Context, cs *Consistency, rs []Relationshi
 }
 
 // CheckAll returns true if all of the provided relationships have access.
-func (c *Client) CheckAll(ctx context.Context, cs *Consistency, rs []Relationshipper) (bool, error) {
+func (c *Client) CheckAll(ctx context.Context, cs *consistency.Strategy, rs []rel.Interface) (bool, error) {
 	results, err := c.Check(ctx, cs, rs...)
 	if err != nil {
 		return false, err
@@ -184,7 +187,7 @@ func errContains(err error, errStrs ...string) bool {
 }
 
 // Check performs a batched permissions check for the provided relationships.
-func (c *Client) Check(ctx context.Context, cs *Consistency, rs ...Relationshipper) ([]bool, error) {
+func (c *Client) Check(ctx context.Context, cs *consistency.Strategy, rs ...rel.Interface) ([]bool, error) {
 	items := make([]*v1.BulkCheckPermissionRequestItem, 0, len(rs))
 	for _, ir := range rs {
 		r := ir.Relationship()
@@ -201,14 +204,14 @@ func (c *Client) Check(ctx context.Context, cs *Consistency, rs ...Relationshipp
 				},
 				OptionalRelation: r.SubjectRelation,
 			},
-			Context: r.caveat().GetContext(),
+			Context: r.MustV1ProtoCaveat().GetContext(),
 		})
 	}
 
 	var resp *v1.BulkCheckPermissionResponse
 	if err := withBackoffRetriesAndTimeout(ctx, func(cCtx context.Context) (cErr error) {
 		resp, cErr = c.client.BulkCheckPermission(cCtx, &v1.BulkCheckPermissionRequest{
-			Consistency: cs.v1c,
+			Consistency: cs.V1Consistency,
 			Items:       items,
 		})
 		return cErr
@@ -233,10 +236,10 @@ func (c *Client) Check(ctx context.Context, cs *Consistency, rs ...Relationshipp
 
 // ForEachRelationship calls the provided function for each relationship
 // matching the provided filter.
-func (c *Client) ForEachRelationship(ctx context.Context, cs *Consistency, f *Filter, fn RelationshipFunc) error {
+func (c *Client) ForEachRelationship(ctx context.Context, cs *consistency.Strategy, f *rel.Filter, fn rel.Func) error {
 	stream, err := c.client.ReadRelationships(ctx, &v1.ReadRelationshipsRequest{
-		Consistency:        cs.v1c,
-		RelationshipFilter: f.filter,
+		Consistency:        cs.V1Consistency,
+		RelationshipFilter: f.V1Filter,
 		// TODO(jzelinskie): handle pagination for folks
 	})
 	if err != nil {
@@ -248,7 +251,7 @@ func (c *Client) ForEachRelationship(ctx context.Context, cs *Consistency, f *Fi
 			return err
 		}
 
-		if err := fn(fromV1(resp.Relationship)); err != nil {
+		if err := fn(rel.FromV1Proto(resp.Relationship)); err != nil {
 			return err
 		}
 	}
@@ -258,11 +261,11 @@ func (c *Client) ForEachRelationship(ctx context.Context, cs *Consistency, f *Fi
 
 // DeleteAtomic removes all of the relationships matching the provided filter
 // in a single transaction.
-func (c *Client) DeleteAtomic(ctx context.Context, f *PreconditionedFilter) (deletedAtRevision string, err error) {
+func (c *Client) DeleteAtomic(ctx context.Context, f *rel.PreconditionedFilter) (deletedAtRevision string, err error) {
 	// Explicitly given no back-off or retry logic.
 	resp, err := c.client.DeleteRelationships(ctx, &v1.DeleteRelationshipsRequest{
-		RelationshipFilter:            f.filter,
-		OptionalPreconditions:         f.preconds,
+		RelationshipFilter:            f.V1Filter,
+		OptionalPreconditions:         f.V1Preconds,
 		OptionalLimit:                 0,
 		OptionalAllowPartialDeletions: false,
 	})
@@ -277,13 +280,13 @@ func (c *Client) DeleteAtomic(ctx context.Context, f *PreconditionedFilter) (del
 
 // Delete removes all of the relationships matching the provided filter in
 // batches.
-func (c *Client) Delete(ctx context.Context, f *PreconditionedFilter) error {
+func (c *Client) Delete(ctx context.Context, f *rel.PreconditionedFilter) error {
 	for {
 		var resp *v1.DeleteRelationshipsResponse
 		if err := withBackoffRetriesAndTimeout(ctx, func(cCtx context.Context) (cErr error) {
 			resp, cErr = c.client.DeleteRelationships(cCtx, &v1.DeleteRelationshipsRequest{
-				RelationshipFilter:            f.filter,
-				OptionalPreconditions:         f.preconds,
+				RelationshipFilter:            f.V1Filter,
+				OptionalPreconditions:         f.V1Preconds,
 				OptionalLimit:                 10_000,
 				OptionalAllowPartialDeletions: false,
 			})
@@ -295,4 +298,64 @@ func (c *Client) Delete(ctx context.Context, f *PreconditionedFilter) error {
 		}
 	}
 	return nil
+}
+
+// ForEachUpdate performs subscribes to optionally-filtered updates out of the
+// SpiceDB Watch API calling the provided UpdateFunc for each result.
+//
+// This function can and should be cancelled via context.
+func (c *Client) ForEachUpdate(ctx context.Context, objTypes []string, fs []rel.Filter, fn rel.UpdateFunc) error {
+	return c.ForEachUpdateFromRevision(ctx, objTypes, fs, fn, "")
+}
+
+// ForEachUpdateFromRevision is the same as ForEachUpdate, but begins at a
+// specific revision onward.
+//
+// This function can and should be cancelled via context.
+func (c *Client) ForEachUpdateFromRevision(ctx context.Context, objTypes []string, fs []rel.Filter, fn rel.UpdateFunc, revision string) error {
+	v1filters := make([]*v1.RelationshipFilter, 0, len(fs))
+	for _, f := range fs {
+		v1filters = append(v1filters, f.V1Filter)
+	}
+
+	req := &v1.WatchRequest{
+		OptionalObjectTypes:         objTypes,
+		OptionalRelationshipFilters: v1filters,
+	}
+	if revision != "" {
+		req.OptionalStartCursor = &v1.ZedToken{Token: revision}
+	}
+
+	watchStream, err := c.client.Watch(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			resp, err := watchStream.Recv()
+			if err != nil {
+				return err
+			}
+
+			for _, update := range resp.Updates {
+				updateType := rel.UpdateUnknown
+				switch update.Operation {
+				case v1.RelationshipUpdate_OPERATION_CREATE:
+					updateType = rel.UpdateCreate
+				case v1.RelationshipUpdate_OPERATION_DELETE:
+					updateType = rel.UpdateDelete
+				case v1.RelationshipUpdate_OPERATION_TOUCH:
+					updateType = rel.UpdateTouch
+				}
+				err = fn(updateType, rel.FromV1Proto(update.Relationship))
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
 }
