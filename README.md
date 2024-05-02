@@ -17,21 +17,31 @@ This library builds upon the official [authzed-go library], but tries to expose 
 
 ## Roadmap
 
+### UX
+
 - ✅ Security-obvious client constructors
 - ✅ Defaults to SpiceDB's best compression method
 - ✅ Automatic back-off & retry logic
 - ✅ Check One/Many/Any/All methods
-- ✅ Checks that use BulkChecks under the hood
+- ✅ Checks use BulkChecks under the hood
 - ✅ Interfaces for Relationships, Objects
 - ✅ Flattened Relationship-type with Caveats
 - ✅ Transaction-style API for Write
-- ✅ Constructors for Consistency
+- ✅ Constructors for consistency arguments
 - ✅ Callback-style API for Watch and ReadRelationships
-- 🚧 Read/Delete with a RelationshipFilterBuilder
+- ✅ Atomic and non-atomic Relationship deletion
+- 🔜 Keepalives for watch (if necessary)
+
+### APIs
+
+- ✅ Checks
+- ✅ Schema Read/Write
+- ✅ Relationship Read/Write/Delete
+- 🚧 Import/Export Relationships
+- ✅ Watch
 - 🔜 Request Debugging
 - 🔜 Lookup Resources/Subjects
-- 🔜 Read/Write Schema
-- 🔜 Keepalives for watch?
+- 🔜 Reflection APIs
 
 ## Examples
 
