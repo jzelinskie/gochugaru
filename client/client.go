@@ -5,6 +5,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -353,6 +354,70 @@ func (c *Client) ForEachUpdateFromRevision(ctx context.Context, objTypes []strin
 				}
 				err = fn(updateType, rel.FromV1Proto(update.Relationship))
 				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+}
+
+// ReadSchema reads the current schema with full consistency.
+func (c *Client) ReadSchema(ctx context.Context) (schema, revision string, err error) {
+	resp, err := c.client.ReadSchema(ctx, &v1.ReadSchemaRequest{})
+	if err != nil {
+		return schema, revision, err
+	}
+	return resp.SchemaText, resp.ReadAt.Token, nil
+}
+
+// WriteSchema applies the provided schema to SpiceDB.
+//
+// Any schema causing relationships to be unreferenced will throw an error.
+// These relationships must be deleted before the schema can be valid.
+func (c *Client) WriteSchema(ctx context.Context, schema string) (revision string, err error) {
+	resp, err := c.client.WriteSchema(ctx, &v1.WriteSchemaRequest{Schema: schema})
+	if err != nil {
+		return revision, err
+	}
+	return resp.WrittenAt.Token, nil
+}
+
+// ExportRelationships is similar to ReadRelationships, but cannot be filtered
+// and is optimized for performing full backups of SpiceDB.
+//
+// A proper backup should include relationships and schema, so this function
+// should be called with the same revision as said schema.
+func (c *Client) ExportRelationships(ctx context.Context, fn rel.Func, revision string) error {
+	relationshipStream, err := c.client.BulkExportRelationships(ctx, &v1.BulkExportRelationshipsRequest{
+		Consistency: &v1.Consistency{
+			Requirement: &v1.Consistency_AtExactSnapshot{
+				AtExactSnapshot: &v1.ZedToken{Token: revision},
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			if err := ctx.Err(); err != nil {
+				return fmt.Errorf("aborted backup: %w", err)
+			}
+
+			relsResp, err := relationshipStream.Recv()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				return fmt.Errorf("error receiving relationships: %w", err)
+			}
+
+			for _, r := range relsResp.Relationships {
+				if err := fn(rel.FromV1Proto(r)); err != nil {
 					return err
 				}
 			}

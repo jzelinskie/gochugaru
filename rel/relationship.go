@@ -77,7 +77,7 @@ func (r Relationship) v1() *v1.Relationship {
 	}
 }
 
-func FromV1Proto(r *v1.Relationship) Relationship {
+func FromV1Proto(r *v1.Relationship) *Relationship {
 	var caveatName string
 	var caveatContext map[string]any
 	if r.OptionalCaveat != nil {
@@ -85,7 +85,7 @@ func FromV1Proto(r *v1.Relationship) Relationship {
 		caveatContext = r.OptionalCaveat.Context.AsMap()
 	}
 
-	return Relationship{
+	return &Relationship{
 		ResourceType:     r.Resource.ObjectType,
 		ResourceID:       r.Resource.ObjectId,
 		ResourceRelation: r.Relation,
@@ -182,7 +182,7 @@ func FromTuple(resource, subject string) (Relationship, error) {
 	return r, nil
 }
 
-type Func func(r Relationship) error
+type Func func(r *Relationship) error
 
 type UpdateType int
 
@@ -193,4 +193,4 @@ const (
 	UpdateTouch
 )
 
-type UpdateFunc func(typ UpdateType, r Relationship) error
+type UpdateFunc func(typ UpdateType, r *Relationship) error
